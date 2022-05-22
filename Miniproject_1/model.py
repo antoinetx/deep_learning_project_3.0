@@ -18,19 +18,17 @@ class Model () :
 
     def load_pretrained_model(self) -> None :
     ## This loads the parameters saved in bestmodel .pth into the model 
-    
+
         best_model = torch.load('bestmodel.pth')
         self.autoenc.load_state_dict(best_model)
         
         pass
 
     def train(self , train_input , train_target) -> None :
-    #: train˙input : tensor of size (N, C, H, W) containing a noisy version of the images.
-    #: train˙target : tensor of size (N, C, H, W) containing another noisy version of the same images , which only differs from the input by their noise .
         
         train_input, train_target = train_input.to(self.device), train_target.to(self.device)
         
-        nb_epochs = 40
+        nb_epochs = 100
         eta = 1e-1
 
         for e in range(nb_epochs):
@@ -41,20 +39,19 @@ class Model () :
                 loss = self.criterion(output, train_target.narrow(0, b, self.mini_batch_size))
                 acc_loss = acc_loss + loss.item()
 
-                self.autoenc.zero_grad()
+                
+                self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
-                with torch.no_grad():
-                    for p in self.autoenc.parameters():
-                        p -= eta * p.grad
-
+                
             print(e, acc_loss)
         pass
 
     def predict(self , test_input ) -> torch.Tensor :
-    #: test˙input : tensor of size (N1 , C, H, W) that has to be denoised by the trained or the loaded network .
-    #: returns a tensor of the size (N1 , C, H, W)
+    
+        test_input = test_input.to(self.device)
         output = self.autoenc(test_input)
+        output = output.cpu()
         
         return output
