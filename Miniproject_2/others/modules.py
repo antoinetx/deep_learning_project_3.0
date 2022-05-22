@@ -4,7 +4,8 @@ from turtle import forward
 
 class ReLU (object):
     def forward(self, input):
-        self.x = max(0, input)
+        self.relu = input > 0
+        self.x = self.relu*input
         return self.x
     def backward(self, gradwrtoutput):
         self.output = (self.x > 0)
@@ -23,28 +24,36 @@ class MSE (object):
     def forward(self, predictions, targets):
         self.predictions = predictions
         self.targets = targets
-        self.mse = (1/self.predictions.shape[1])*sum((self.predictions - self.targets)**2)
+        self.mse = (((self.predictions - self.targets)**2).mean())
         return self.mse
     def backward(self, gradwrtoutput):
-        self.output = (2/self.predictions.shape[1])*sum((self.predictions - self.targets))
+        self.output = 2*((self.predictions - self.targets).mean())
+        self.output = self.output*gradwrtoutput
         return self.output
-    
-""" class SGD (object):
-    def forward(self, predictions, targets):
-        self.predictions = predictions
-        self.targets = targets
-        self.mse = (1/self.predictions.shape[1])*sum((self.predictions - self.targets)**2)
-        return self.mse
-    def backward(self, gradwrtoutput):
-        self.output = (2/self.predictions.shape[1])*sum((self.predictions - self.targets))
-        return self.output """
     
 class Sequential (object):
     def __init__(self, *input):
         self.layers = input
         
-    def forward(self):
-        for i in self.layers.shape[1]:
-            x = i.forward(x)
+    def forward(self, input):
+        x = input
+        for lay in self.layers:
+            x = lay.forward(x)
         return x
-        
+    
+    def backward(self, gradwrtoutput):
+        out = gradwrtoutput
+        for lay in self.layers:
+            out = lay.backward(out)
+        return out
+            
+            
+            
+            
+class SGD (object):
+    def __init__():
+        pass
+    def zero_grad():
+        pass
+    def step():
+        pass
