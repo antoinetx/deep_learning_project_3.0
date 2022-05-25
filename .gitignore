@@ -1,0 +1,36 @@
+# Specify filepatterns you want git to ignore.
+
+# Ignoring directories
+# Both the directory itself and its contents will be ignored.
+Miniproject_1/data/
+Miniproject_2/data/
+
+*.pkl
+
+#maybe to put in comment
+*.pth
+
+# Ignoring files by extension
+# All files with these extensions will be ignored in
+# this directory and all its sub-directories.
+*.DS_Store
+
+# gitignore template for Jupyter Notebooks
+# website: http://jupyter.org/
+
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+.Python
+build/
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+.cache
+
+# API keys
+.env
