@@ -14,8 +14,8 @@ class ReLU (object):
         return self.x
     def backward(self, gradwrtoutput):
         self.output = (self.x > 0)
-        self.output = self.output *  gradwrtoutput
-        return self.output
+        self.grad = self.output *  gradwrtoutput
+        return self.grad
     def param(self):
         return None
     
@@ -25,8 +25,8 @@ class Sigmoid (object):
         self.x = 1/(1 + math.e**(-input))
         return self.x
     def backward(self, gradwrtoutput):
-        self.output = (self.x*(1-self.x))*gradwrtoutput
-        return self.output
+        self.grad = (self.x*(1-self.x))*gradwrtoutput
+        return self.grad
     
     def param(self):
         return None
@@ -40,9 +40,9 @@ class Upsample(object):
         #print(self.kernel.shape)
         
     def forward(self,x):
-        print('x', x.shape)
+        #print('x', x.shape)
         self.b, self.channels, self.s1, self.s2 = x.shape
-        print('kernel',self.kernel.shape)
+        #print('kernel',self.kernel.shape)
         self.s3, self.s4 = self.factor_size,self.factor_size
         x = x.reshape(self.b, self.channels, self.s1, 1, self.s2, 1)
         self.kernel = self.kernel.reshape(1, self.s3, 1, self.s4)
@@ -64,10 +64,11 @@ class Upsample(object):
         
         dL_dX_red = dL_dX[:,:,:,:,0,0]
         #print(dL_dX_red.shape)
+        self.grad = dL_dX_red
     
         #print(dL_dX.reshape(self.b, self.channels, self.s1, self.s2).shape)
         
-        return dL_dX_red
+        return self.grad
     
     def param(self):
         return None
@@ -80,15 +81,17 @@ class MSE (object):
         self.targets = targets
         self.mse = (((self.predictions - self.targets)**2).mean())
         return self.mse
-    def backward(self, gradwrtoutput):
+    def backward(self): #, gradwrtoutput):
         self.output = 2*((self.predictions - self.targets).mean())
-        self.output = self.output*gradwrtoutput
+        self.output = self.output
         return self.output
     
 class Convolution(object):
     def __init__(self, channels_input, channels_output, kernel_size, stride):
         
         self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
+        self.bias = torch.empty(channels_output).normal_()
+        self.bias = torch.empty(channels_output).normal_()
         self.kernel_size = kernel_size
         self.stride = stride
         self.channels_output = channels_output
@@ -203,16 +206,16 @@ class Sequential (object):
         self.layers = input
         
     def forward(self, input):
-        print('Sequential forward')
+        #print('Sequential forward')
         x = input
         for lay in self.layers:
-            print(lay)
-            print('img', x.shape)
+            #print(lay)
+            #print('img', x.shape)
             x = lay.forward(x)
         return x
     
     def backward(self, gradwrtoutput):
-        print('Sequential backward')
+        #print('Sequential backward')
         out = gradwrtoutput
         for lay in reversed(self.layers):
             #print(lay)
@@ -239,12 +242,12 @@ class SGD (object):
     def step(self):
         
         for lay in self.layers.layers:
-            print(lay)
+            #print(lay)
             values = lay.param()
             if lay.param() is not None:
                 #print('step', lay.weight)
                 #print('step lr', self.lr*lay.grad )
-                lay.weight = lay.weight + self.lr*lay.grad
+                lay.weight = lay.weight - self.lr*lay.grad
                 #print('step', lay.weight)
                 
                 
