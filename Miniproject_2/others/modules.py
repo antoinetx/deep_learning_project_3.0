@@ -82,16 +82,17 @@ class MSE (object):
         self.mse = (((self.predictions - self.targets)**2).mean())
         return self.mse
     def backward(self): #, gradwrtoutput):
-        self.output = 2*((self.predictions - self.targets).mean())
-        self.output = self.output
+        self.output = 2*((self.predictions - self.targets))#.mean())
+        #self.output = self.output
         return self.output
     
 class Convolution(object):
-    def __init__(self, channels_input, channels_output, kernel_size, stride):
+    def __init__(self, channels_input, channels_output, kernel_size, dilation, padding, stride):
         self.device = torch.device ("cuda" if torch.cuda.is_available() else "cpu")
         self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
         self.bias = torch.empty(channels_output).normal_()
-
+        self.dilation = 0
+        self.padding = padding
         self.kernel_size = kernel_size
         self.stride = stride
         self.channels_output = channels_output
@@ -109,12 +110,12 @@ class Convolution(object):
         #print('h w ',H,W)
         self.H = H
         self.W = W
-        self.Hout = int((H - self.kernel_size)/self.stride + 1)
-        self.Wout = int((H - self.kernel_size)/self.stride + 1)
+        self.Hout = int((H - self.kernel_size + self.padding*2)/self.stride + 1)
+        self.Wout = int((H - self.kernel_size + self.padding*2)/self.stride + 1)
         #print('Hout Wout', self.Hout, self.Wout)
         self.x = imgs
         #print('x', self.x.shape)
-        self.x_unfolded = unfold(self.x, kernel_size = (self.kernel_size, self.kernel_size), stride = self.stride)
+        self.x_unfolded = unfold(self.x, kernel_size = (self.kernel_size, self.kernel_size),padding = self.padding, stride = self.stride)
         #print('x unfold',self.x_unfolded.shape)
         #print('w shape', self.weight.view(self.channels_output, -1).shape)
         self.y = self.x_unfolded.transpose(1, 2).matmul(self.weight.view(self.channels_output, -1).t()).transpose(1, 2)
@@ -143,7 +144,7 @@ class Convolution(object):
         #backward input
         dL_dX_reshape = dS_dX_reshape @ dL_dS_reshape # [B, (IxKxK), (SOxSO)]
         #print('dL_dX_reshape',dL_dX_reshape.shape)
-        dL_dX = fold(dL_dX_reshape, kernel_size = (self.kernel_size, self.kernel_size), stride = self.stride, output_size = (self.W, self.H)) # [B, I, SI, SI]
+        dL_dX = fold(dL_dX_reshape, kernel_size = (self.kernel_size, self.kernel_size), padding = self.padding, stride = self.stride, output_size = (self.W, self.H)) # [B, I, SI, SI]
         #print('dL_dX',dL_dX.shape)
         
         
@@ -175,7 +176,7 @@ class Convolution(object):
     
     
 class ConvolutionTransposed(object):
-    def __init__(self,channels_input, channels_output, kernel_size, stride):
+    def __init__(self,channels_input, channels_output, kernel_size, dilation, padding, stride):
         self.device = torch.device ("cuda" if torch.cuda.is_available() else "cpu")
         
         self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
@@ -189,10 +190,13 @@ class ConvolutionTransposed(object):
         self.channels_output = channels_output
         self.channels_input = channels_input
         
+        self.padding = padding
+        self.dilation = 0
+        
     def forward(self,x):
         
         B,I,SI,SI = x.shape
-        SO = (SI -1)*self.stride + self.kernel_size
+        SO = (SI -1)*self.stride + self.kernel_size - 2*self.padding
         self.H = SI
         self.W = SI
         self.x = x
@@ -202,7 +206,7 @@ class ConvolutionTransposed(object):
         self.y_reshape = self.weight_reshape.T @ self.x_reshape # [B, OxKxK, SIxSI]
         #print('y', self.y_reshape.shape)
         
-        self.y = fold(self.y_reshape, kernel_size =(self.kernel_size,self.kernel_size), stride = self.stride, output_size=(SO,SO))
+        self.y = fold(self.y_reshape, kernel_size =(self.kernel_size,self.kernel_size),padding = self.padding, stride = self.stride, output_size=(SO,SO))
         
 
         
@@ -216,7 +220,7 @@ class ConvolutionTransposed(object):
         dS_dX = self.weight # [O,I,K,K]
         
         #backward Input
-        dL_dS_unfold = unfold(dL_dS, kernel_size =(self.kernel_size,self.kernel_size), stride = self.stride)#[B, OxKxK, SIxSI]
+        dL_dS_unfold = unfold(dL_dS, kernel_size =(self.kernel_size,self.kernel_size), padding = self.padding, stride = self.stride)#[B, OxKxK, SIxSI]
         #print('unfold', dL_dS_unfold.shape )
        
         dS_dX_reshape = dS_dX.reshape(self.channels_input,-1) # [I,OxKxK]
@@ -295,4 +299,42 @@ class SGD (object):
                 lay.bias = lay.bias - self.lr*lay.grad_bias
                 #print('step', lay.weight)
                 
+"""
+class Adam(object)
+    def __init__(self,layers, lr, beta_1 = 0.9, beta_2 = 0.999, epsilon = 1e-8):
+        self.lr = lr
+        self.layers = layers
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+        self.epsilon = epsilon
+        
+    def zero_grad(self):
+        #print('zero grad')
+        #print(self.layers.layers)
+        
+        for lay in self.layers.layers:
+            #print(lay)
+            values = lay.param()
+            if lay.param() is not None:
+                lay.grad = lay.grad.zero_()
+                lay.grad_bias = lay.grad_bias.zero_()
+          
+    
+    def step(self):
+        
+        for lay in self.layers.layers:
+            #print(lay)
+            values = lay.param()
+            if lay.param() is not None:
+                #print('step', lay.weight.shape)
+                #print('step lr', lay.grad.shape )
+                vdw = self.beta_1*vdw + (1 - self.beta_1)*lay.grad
+                sdw = self.beta_2*sdw + (1 - self.beta_2)*((lay.grad)**2)
+                
+                lay.weight = lay.weight - self.epsilon*vdw/(sdw +.self.epsilon).sqrt()
+                
+                lay.bias = lay.bias - self.lr*lay.grad_bias
+                #print('step', lay.weight)
+                
+"""
                 
