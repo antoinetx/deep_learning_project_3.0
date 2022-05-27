@@ -167,8 +167,6 @@ class Convolution(object):
         #print('dL_dB', self.grad_bias.shape)
         
         
-       
-        
         return dL_dX  
     
     def param(self):
@@ -176,40 +174,75 @@ class Convolution(object):
         return self.weight, self.grad, self.bias, self.grad_bias
     
     
-"""   
 class ConvolutionTransposed(object):
-    def __init__(self, channels_input, channels_output, kernel_size, stride):
-        self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
+    def __init__(self,channels_input, channels_output, kernel_size, stride):
+        self.device = torch.device ("cuda" if torch.cuda.is_available() else "cpu")
         
-        self.channel_input = channels_input
-        #print('input channels', self.channel_input)
+        self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
+        self.grad = torch.empty(channels_output, channels_input, kernel_size, kernel_size)
+        
+        self.bias = torch.empty(channels_output)
+        self.grad_bias = torch.empty(channels_output)
+        
         self.kernel_size = kernel_size
         self.stride = stride
+        self.channels_output = channels_output
+        self.channels_input = channels_input
         
-        print('weight',self.weight.shape)
+    def forward(self,x):
         
+        B,I,SI,SI = x.shape
+        SO = (SI -1)*self.stride + self.kernel_size
+        self.H = SI
+        self.W = SI
+        self.x = x
+        self.x_reshape = self.x.reshape(B,I,-1) # [B,I,SI,SI]
+        self.weight_reshape = self.weight.permute(1,0,2,3).reshape(I,-1) # [I,(OxKxK)]
         
-    def forward(self, imgs):
-        #print('forward')
-        _,_,H,W = imgs.shape
-        H_out = (H - 1)*self.stride + self.kernel_size 
-        W_out = (W - 1)*self.stride + self.kernel_size 
+        self.y_reshape = self.weight_reshape.T @ self.x_reshape # [B, OxKxK, SIxSI]
+        #print('y', self.y_reshape.shape)
         
-        #print('Hout Wout', H_out, W_out)
+        self.y = fold(self.y_reshape, kernel_size =(self.kernel_size,self.kernel_size), stride = self.stride, output_size=(SO,SO))
         
-        self.x = imgs.permute(1, 2, 3, 0).reshape(self.channel_input, -1)
-        #print('x',self.x.shape)
-        self.y = (self.weight.reshape(self.channel_input, -1)).t().matmul(self.x)
-        #print('y',self.y.shape)
-        self.y = self.y.reshape(self.y.shape[0], -1, imgs.shape[0])
-        #print('y2',self.y.shape)
-        self.y = self.y.permute(2, 0, 1)
+
         
-        #print(self.y.shape)
-        self.y = fold( self.y, (H_out, W_out), kernel_size=(self.kernel_size,self.kernel_size), stride=self.stride)
         
         return self.y
-"""
+    
+    def backward(self,gradwrtoutput):
+        
+        dL_dS = gradwrtoutput # [B, O, SO, SO]
+        #print('dL_dS', dL_dS.shape)
+        dS_dX = self.weight # [O,I,K,K]
+        
+        #backward Input
+        dL_dS_unfold = unfold(dL_dS, kernel_size =(self.kernel_size,self.kernel_size), stride = self.stride)#[B, OxKxK, SIxSI]
+        #print('unfold', dL_dS_unfold.shape )
+       
+        dS_dX_reshape = dS_dX.reshape(self.channels_input,-1) # [I,OxKxK]
+        #print('dS_dX_reshape', dS_dX_reshape.shape)
+        
+        dL_dX_reshape = dS_dX_reshape @ dL_dS_unfold # [B,I,SIxSI]
+        dL_dX =  dL_dX_reshape.view(1,self.channels_input,self.H, self.W)
+        
+        #backward weight
+        #print('dL_dS_unfold', dL_dS_unfold.shape)
+        dL_dS_unfold2 = dL_dS_unfold.permute(1,0,2).reshape(self.channels_output*self.kernel_size*self.kernel_size,-1) #[OxKxK, BxSIxSI]
+        #print('unfold 2', dL_dS_unfold2.shape )
+        dS_dW_reshape = self.x.reshape(self.channels_input, -1 ) #[I, BxSIxSI]
+        
+        dL_dW_reshape =  dS_dW_reshape @ dL_dS_unfold2.T # [I, OxKxK]
+        
+        dL_dW = dL_dW_reshape.reshape(self.channels_input, self.channels_output, self.kernel_size, self.kernel_size ).permute(1,0,2,3)
+        
+        self.grad = dL_dW
+        #print('self.grad',self.grad.shape)
+        
+        return dL_dX
+    
+    def param(self):
+        return self.weight, self.grad, self.bias, self.grad_bias 
+        
     
 class Sequential (object):
     def __init__(self, *input):
@@ -256,8 +289,8 @@ class SGD (object):
             #print(lay)
             values = lay.param()
             if lay.param() is not None:
-                #print('step', lay.weight)
-                #print('step lr', self.lr*lay.grad )
+                #print('step', lay.weight.shape)
+                #print('step lr', lay.grad.shape )
                 lay.weight = lay.weight - self.lr*lay.grad
                 lay.bias = lay.bias - self.lr*lay.grad_bias
                 #print('step', lay.weight)
