@@ -88,16 +88,17 @@ class MSE (object):
     
 class Convolution(object):
     def __init__(self, channels_input, channels_output, kernel_size, stride):
-        
+        self.device = torch.device ("cuda" if torch.cuda.is_available() else "cpu")
         self.weight = torch.empty(channels_output, channels_input, kernel_size, kernel_size).normal_()
         self.bias = torch.empty(channels_output).normal_()
-        self.bias = torch.empty(channels_output).normal_()
+
         self.kernel_size = kernel_size
         self.stride = stride
         self.channels_output = channels_output
         self.channels_input = channels_input
         
         self.grad = torch.empty(channels_output, channels_input, kernel_size, kernel_size)
+        self.grad_bias = torch.empty(channels_output)
 
         #print('weight',self.weight.shape)
          
@@ -120,7 +121,7 @@ class Convolution(object):
         #print('y',self.y.shape)
         self.y = fold(self.y, (int(self.Hout), int(self.Wout)),(1,1), stride = 1)
         #self.y = self.y.view(1,10,15,15)
-        return self.y  #, self_x, self_weight
+        return self.y + self.bias.reshape(1,-1,1,1)
     
 
     def backward(self,gradwrtoutput):
@@ -147,7 +148,7 @@ class Convolution(object):
         
         
         #backward weight
-        dL_dS_reshape2 = dL_dS.reshape(self.channels_output, -1) # [O, (BxSOxSO)]
+        dL_dS_reshape2 = dL_dS.reshape(self.channels_output, -1).to(self.device) # [O, (BxSOxSO)]
         dS_dW = self.x_unfolded # [B, (IxKxK), (SOxSO)]
         dS_dW_reshape = dS_dW.reshape(-1, inKerKer_size) # [(BxSOxSO), (IxKxK))] 
         dL_dW_reshape = dL_dS_reshape2 @ dS_dW_reshape # [O, (IxKxK)]
@@ -157,13 +158,22 @@ class Convolution(object):
         #print('backward weight', self.grad.shape )
         #print('original weight', self.weight.shape )
         #backward bias
+        
+        #backward bias
+        dS_dB_reshape = 1 + torch.empty(self.Hout*self.Wout ).normal_() # [BxSOxSO]
+        dL_dB = dL_dS_reshape2 @ dS_dB_reshape # [O, (BxSOxSO)] [BxSOxSO]
+        
+        self.grad_bias = dL_dB
+        #print('dL_dB', self.grad_bias.shape)
+        
+        
        
         
         return dL_dX  
     
     def param(self):
         #print('hello convolution')
-        return self.weight, self.grad 
+        return self.weight, self.grad, self.bias, self.grad_bias
     
     
 """   
@@ -237,6 +247,7 @@ class SGD (object):
             values = lay.param()
             if lay.param() is not None:
                 lay.grad = lay.grad.zero_()
+                lay.grad_bias = lay.grad_bias.zero_()
           
     
     def step(self):
@@ -248,6 +259,7 @@ class SGD (object):
                 #print('step', lay.weight)
                 #print('step lr', self.lr*lay.grad )
                 lay.weight = lay.weight - self.lr*lay.grad
+                lay.bias = lay.bias - self.lr*lay.grad_bias
                 #print('step', lay.weight)
                 
                 
